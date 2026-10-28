@@ -94,28 +94,34 @@ body.edit{padding-bottom:70px}
 <input type="file" id="file" accept="image/*" hidden="">
 
 <script>
-/* รูปที่โหลดไม่ขึ้น (ลิงก์เสีย) จะถูกซ่อน แล้วแสดงช่อง "ใส่รูป" แทนไอคอนรูปแตก */
-document.querySelectorAll('.pic img').forEach(function (img) {
-  function bad() { img.hidden = true; }
-  img.addEventListener('error', bad);
-  if (img.complete && img.getAttribute('src') && img.naturalWidth === 0) bad();
-});
-</script>
-<script>
-/* โหมดแก้ไข: เปิดหน้านี้ด้วย  index.html#edit  (คนทั่วไปที่เปิดลิงก์ปกติจะไม่เห็นปุ่มใด ๆ) */
 (function () {
+  window.addEventListener('hashchange', function () { location.reload(); });
   if (location.hash !== '#edit') return;
   document.body.classList.add('edit');
+
   var KEY = 'lockn-edits', store = {}, grid = document.getElementById('grid');
   try { store = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
   function persist() {
     try { localStorage.setItem(KEY, JSON.stringify(store)); }
     catch (e) { alert('พื้นที่จำชั่วคราวเต็ม กรุณากดบันทึกเป็น index.html ทันที'); }
   }
-  function show(img, uri) { if (uri) { img.src = uri; img.hidden = false; } else { img.removeAttribute('src'); img.hidden = true; } }
-  var input = document.getElementById('file');
+  function show(img, uri) {
+    if (uri) { img.src = uri; img.hidden = false; }
+    else { img.removeAttribute('src'); img.hidden = true; }
+  }
+  function btn(text, fn, cls) {
+    var b = document.createElement('button'); b.textContent = text;
+    if (cls) b.className = cls; b.onclick = fn; return b;
+  }
 
-  // ย่อรูป: การ์ดใช้ WebP (คงพื้นหลังโปร่งใส), โลโก้ใช้ PNG
+  document.querySelectorAll('.edit-ui').forEach(function (e) { e.remove(); });
+  var input = document.getElementById('file');
+  if (!input) {
+    input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*'; input.hidden = true; input.id = 'file';
+    document.body.appendChild(input);
+  }
+
   function shrink(file, max, type) {
     return createImageBitmap(file).then(function (bmp) {
       var k = Math.min(1, max / Math.max(bmp.width, bmp.height));
@@ -134,11 +140,14 @@ document.querySelectorAll('.pic img').forEach(function (img) {
     };
     input.click();
   }
-  function clear(key, img) { store[key] = ''; show(img, ''); persist(); }
 
-  var logo = document.getElementById('logo');
-  if ('logo' in store) show(logo, store.logo);
-  document.getElementById('logoBtn').onclick = function () { pick('logo', logo, 1100, 'image/png'); };
+  var logo = document.getElementById('logo') || document.querySelector('.logo');
+  if (logo) {
+    if ('logo' in store) show(logo, store.logo);
+    var lc = document.createElement('div'); lc.className = 'edit-ui logo-ctl';
+    lc.appendChild(btn('📷 เปลี่ยนโลโก้', function () { pick('logo', logo, 1100, 'image/png'); }));
+    logo.insertAdjacentElement('afterend', lc);
+  }
 
   function makeCard() {
     var d = document.createElement('div'); d.className = 'card';
@@ -146,37 +155,38 @@ document.querySelectorAll('.pic img').forEach(function (img) {
     grid.appendChild(d); return d;
   }
   function setup(card, i) {
-    var pic = card.querySelector('.pic');
+    var pic = card.querySelector('.pic'); if (!pic) return;
     var ctl = document.createElement('div'); ctl.className = 'edit-ui ctl';
     [['a', '📷 การ์ด'], ['b', '📷 ตอน hover']].forEach(function (p) {
       var img = pic.querySelector('.' + p[0]), key = 'c' + i + p[0];
+      if (!img) return;
       if (key in store) show(img, store[key]);
-      var b = document.createElement('button'); b.textContent = p[1];
-      b.onclick = function () { pick(key, img, 640, 'image/webp'); };
-      var x = document.createElement('button'); x.className = 'x'; x.textContent = '✕'; x.title = 'ลบรูป';
-      x.onclick = function () { clear(key, img); };
-      ctl.appendChild(b); ctl.appendChild(x);
+      ctl.appendChild(btn(p[1], function () { pick(key, img, 640, 'image/webp'); }));
+      ctl.appendChild(btn('✕', function () { store[key] = ''; show(img, ''); persist(); }, 'x'));
     });
     card.appendChild(ctl);
   }
   for (var k = grid.children.length; k < (store.n || 0); k++) makeCard();
   Array.prototype.forEach.call(grid.children, setup);
 
-  document.getElementById('addBtn').onclick = function () {
+  var bar = document.createElement('div'); bar.className = 'edit-ui bar';
+  bar.innerHTML = '<span>✏️ โหมดแก้ไข</span>';
+  bar.appendChild(btn('＋ เพิ่มการ์ด', function () {
     var n = grid.children.length, c = makeCard(); setup(c, n);
     store.n = n + 1; persist(); c.scrollIntoView({behavior: 'smooth', block: 'center'});
-  };
-  document.getElementById('saveBtn').onclick = function () {
+  }));
+  bar.appendChild(btn('💾 บันทึกเป็น index.html', function () {
     var c = document.documentElement.cloneNode(true);
     c.querySelectorAll('.edit-ui').forEach(function (e) { e.remove(); });
     c.querySelector('body').classList.remove('edit');
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob(['<!DOCTYPE html>\n' + c.outerHTML], {type: 'text/html'}));
     a.download = 'index.html'; a.click();
-  };
-  document.getElementById('resetBtn').onclick = function () {
+  }, 'save'));
+  bar.appendChild(btn('↺ ล้างที่แก้', function () {
     if (confirm('ล้างรูปที่แก้ไว้ทั้งหมดในเบราว์เซอร์นี้?')) { localStorage.removeItem(KEY); location.reload(); }
-  };
+  }));
+  document.body.appendChild(bar);
 })();
 </script>
 
